@@ -1,9 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Xml;
 using System.Xml.Xsl;
+using System.Text.RegularExpressions;
+using System.IO;
 
 namespace TrxerConsole
 {
@@ -11,8 +12,9 @@ namespace TrxerConsole
     {
         /// <summary>
         /// Embedded Resource name
-        /// </summary>
+        /// </summary>     
         private const string XSLT_FILE = "Trxer.xslt";
+
         /// <summary>
         /// Trxer output format
         /// </summary>
@@ -40,10 +42,21 @@ namespace TrxerConsole
         /// <param name="xsl">Xsl document</param>
         private static void Transform(string fileName, XmlDocument xsl)
         {
-            XslCompiledTransform x = new XslCompiledTransform(true);
-            x.Load(xsl, new XsltSettings(true, true), null);
+            XslCompiledTransform x = new XslCompiledTransform();
+
+            var settings = new XsltSettings(true, false);
+
+            // https://msdev.pro/2012/09/14/xslloadexception-the-type-or-namespace-name-securityrulesattribute-does-not-exist-in-the-namespace-system-security-are-you-missing-an-assembly-reference/
+            XsltArgumentList xsltArgs = new XsltArgumentList();
+            XsltFunctions ext = new XsltFunctions();
+            xsltArgs.AddExtensionObject("urn:my-scripts", ext);
+
+            x.Load(xsl, settings, null);
+
             Console.WriteLine("Transforming...");
-            x.Transform(fileName, fileName + OUTPUT_FILE_EXT);
+            FileStream fs = File.Create(fileName + OUTPUT_FILE_EXT);
+            x.Transform(fileName, xsltArgs, fs);
+            fs.Close();
             Console.WriteLine("Done transforming xml into html");
         }
 
@@ -54,7 +67,7 @@ namespace TrxerConsole
         private static XmlDocument PrepareXsl()
         {
             XmlDocument xslDoc = new XmlDocument();
-            Console.WriteLine("Loading xslt template...");
+            Console.WriteLine($"Loading xslt template {XSLT_FILE}...");
             xslDoc.Load(ResourceReader.StreamFromResource(XSLT_FILE));
             MergeCss(xslDoc);
             MergeJavaScript(xslDoc);
@@ -91,6 +104,80 @@ namespace TrxerConsole
                 XmlElement styleEl = xslDoc.CreateElement("style");
                 styleEl.InnerText = ResourceReader.LoadTextFromResource(xmlElement.Attributes["href"].Value);
                 headNode.ReplaceChild(styleEl, xmlElement);
+            }
+        }
+
+        public class XsltFunctions
+        {
+            public string RemoveAssemblyName(string asm)
+            {
+                int idx = asm.IndexOf(',');
+                if (idx == -1)
+                    return asm;
+                return asm.Substring(0, idx);
+            }
+
+            public string RemoveNamespace(string asm)
+            {
+                int coma = asm.IndexOf(',');
+                return asm.Substring(coma + 2, asm.Length - coma - 2);
+            }
+
+            public string GetShortDateTime(string time)
+            {
+                if (string.IsNullOrEmpty(time))
+                {
+                    return string.Empty;
+                }
+
+                return DateTime.Parse(time).ToString();
+            }
+
+            private string ToExtactTime(double ms)
+            {
+                if (ms < 1000)
+                    return ms + " ms";
+
+                if (ms >= 1000 && ms < 60000)
+                    return string.Format("{0:0.00} seconds", TimeSpan.FromMilliseconds(ms).TotalSeconds);
+
+                if (ms >= 60000 && ms < 3600000)
+                    return string.Format("{0:0.00} minutes", TimeSpan.FromMilliseconds(ms).TotalMinutes);
+
+                return string.Format("{0:0.00} hours", TimeSpan.FromMilliseconds(ms).TotalHours);
+            }
+
+            public string ToExactTimeDefinition(string duration)
+            {
+                if (string.IsNullOrEmpty(duration))
+                {
+                    return string.Empty;
+                }
+
+                return ToExtactTime(TimeSpan.Parse(duration).TotalMilliseconds);
+            }
+
+            public string ToExactTimeDefinition(string start, string finish)
+            {
+                TimeSpan datetime = DateTime.Parse(finish) - DateTime.Parse(start);
+                return ToExtactTime(datetime.TotalMilliseconds);
+            }
+
+            public string CurrentDateTime()
+            {
+                return DateTime.Now.ToString();
+            }
+
+            public string ExtractImageUrl(string text)
+            {
+                Match match = Regex.Match(text, "('|\")([^\\s]+(\\.(?i)(jpg|png|gif|bmp)))('|\")",
+                   RegexOptions.IgnoreCase);
+
+                if (match.Success)
+                {
+                    return match.Value.Replace("\'", string.Empty).Replace("\"", string.Empty).Replace("\\", "\\\\");
+                }
+                return string.Empty;
             }
         }
     }

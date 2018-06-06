@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "trxercore": {
+      "commandName": "Project",
+      "commandLineArgs": "C:\\Users\\grandersonk\\source\\repos\\trxer\\TrxerConsole\\bin\\Debug\\abc.trx"
+    }
+  }
+}
